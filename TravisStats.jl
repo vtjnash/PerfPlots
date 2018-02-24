@@ -1,6 +1,5 @@
 
 using HTTP
-using Requests
 using JSON
 using Base.Test
 
@@ -20,7 +19,8 @@ test_connection() = @testset "Sanity check" begin
     r = do_request("/")
     @test HTTP.status(r) == 200
     @test HTTP.headers(r)["Content-Type"] == "application/json"
-    @test HTTP.string(r) == """{"hello":"world"}"""
+    @test read(HTTP.body(r), String) == """{"hello":"world"}"""
+    r
 end
 
 struct IdIndex
@@ -50,7 +50,7 @@ function get_branch_builds!(state::IdIndex, after::String)
     end
     @check HTTP.status(r) == 200
 
-    data = JSON.parse(string(r))
+    data = JSON.parse(read(HTTP.body(r), String))
     commits = data["commits"]
     for commit in commits
         commit_id = commit["id"]::Int
@@ -105,7 +105,7 @@ function fetch_jobs!(state)
             get!(state.jobs, job_id) do
                 job = do_request("/jobs/$job_id")
                 @check HTTP.status(job) == 200
-                data = JSON.parse(string(job))
+                data = JSON.parse(read(HTTP.body(job), String))
                 return data["job"]
             end
         end
@@ -120,10 +120,10 @@ function fetch_sysimg_size!(state)
                 job_config = job["config"]
                 if job_config["os"] == "linux" && contains(job_config["env"], "x86_64")
                     if job["state"] == "passed"
-                        raw_log = Requests.get("$uriroot/jobs/$job_id/log", headers = textplain_headers) # HTTP can't handle this?
-                        @check Requests.statuscode(raw_log) == 200
-                        s = String(raw_log)
-                        m = match(r"(?:\.rodata|__const)\s+(\d+)", s)
+                        raw_log = HTTP.get("$uriroot/jobs/$job_id/log", headers = textplain_headers) # HTTP can't handle this?
+                        @check HTTP.status(raw_log) == 200
+                        s = read(HTTP.body(raw_log), String)
+                        m = match(r".data\s+(\d+)", s)
                         @check isa(m, RegexMatch)
                         bytes = parse(Int, m[1])
                     else
@@ -164,8 +164,9 @@ if false
     for id in sort(collect(keys(state.builds)))
         bytes = state.builds[id]["bytes-linux-x86_64"]
         commit = state.commits[state.builds[id]["commit_id"]]
-        sha = commit["sha"]
+        sha = commit["sha"][1:10]
+        msg = split(commit["message"], '\n', limit=2)[1][1:min(end, 40)]
         spark = "#" ^ (bytes > 0 ? 1 + cols ÷ 2 * (bytes - min_bytes) ÷ (max_bytes - min_bytes) : 0)
-        println("#$id sha $sha $bytes bytes  $spark")
+        println("$sha $bytes bytes  $spark    \t$msg")
     end
 end
