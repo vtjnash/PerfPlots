@@ -6,10 +6,16 @@ using Base.Test
 push!(LOAD_PATH, @__DIR__)
 using Check
 
-const json_headers = Dict{String, String}("Accept" => "application/vnd.travis-ci.2+json")
-const textplain_headers = Dict{String, String}("Accept" => "text/plain")
+const json_headers = Dict{String, String}([
+    "Accept" => "application/vnd.travis-ci.2+json",
+    "Travis-API-Version" = "2",
+    ])
+const textplain_headers = Dict{String, String}([
+    "Accept" => "text/plain",
+    "Travis-API-Version" = "2",
+    ])
 const uriroot = "https://api.travis-ci.org"
-const readtimeout = 60.0
+const readtimeout = 60
 const repo = "/repos/JuliaLang/julia"
 const TravisDateFmt = dateformat"yyyy-mm-dd\THH:MM:SS\Z"
 
@@ -17,9 +23,9 @@ do_request(path) = HTTP.get(uriroot * path, headers = json_headers, readtimeout 
 
 test_connection() = @testset "Sanity check" begin
     r = do_request("/")
-    @test HTTP.status(r) == 200
+    @test r.status== 200
     @test HTTP.headers(r)["Content-Type"] == "application/json"
-    @test read(HTTP.body(r), String) == """{"hello":"world"}"""
+    @test String(r.body) == """{"hello":"world"}"""
     r
 end
 
@@ -48,9 +54,9 @@ function get_branch_builds!(state::IdIndex, after::String)
     else
         r = do_request("$repo/builds?event_type=push&after_number=$after")
     end
-    @check HTTP.status(r) == 200
+    @check r.status == 200
 
-    data = JSON.parse(read(HTTP.body(r), String))
+    data = JSON.parse(String(r.body))
     commits = data["commits"]
     for commit in commits
         commit_id = commit["id"]::Int
@@ -80,7 +86,7 @@ function get_branch_builds_until!(state::IdIndex, before::DateTime)
 end
 
 function filter_branch(state::IdIndex, branch::String)
-    builds = filter(state.builds) do id, build
+    builds = filter(state.builds) do (id, build)
         return state.commits[build["commit_id"]]["branch"] == branch
     end
     return IdIndex(builds, state)
@@ -104,14 +110,15 @@ function fetch_jobs!(state)
         foreach(build["job_ids"]) do job_id
             get!(state.jobs, job_id) do
                 job = do_request("/jobs/$job_id")
-                @check HTTP.status(job) == 200
-                data = JSON.parse(read(HTTP.body(job), String))
+                @check job.status == 200
+                data = JSON.parse(String(job.body))
                 return data["job"]
             end
         end
     end
 end
 
+const blacklist = Set([338558293, 339157435]) # job_id that are broken (406) on Travis
 function fetch_sysimg_size!(state)
     foreach_build(state) do build
         foreach(build["job_ids"]) do job_id
@@ -119,11 +126,11 @@ function fetch_sysimg_size!(state)
                 job = state.jobs[job_id]
                 job_config = job["config"]
                 if job_config["os"] == "linux" && contains(job_config["env"], "x86_64")
-                    if job["state"] == "passed"
-                        raw_log = HTTP.get("$uriroot/jobs/$job_id/log", headers = textplain_headers) # HTTP can't handle this?
-                        @check HTTP.status(raw_log) == 200
-                        s = read(HTTP.body(raw_log), String)
-                        m = match(r".data\s+(\d+)", s)
+                    if job["state"] == "passed" && !in(job_id, blacklist)
+                        raw_log = HTTP.get("$uriroot/jobs/$job_id/log", headers = textplain_headers)
+                        @check raw_log.status == 200
+                        s = String(raw_log.body)
+                        m = match(r"\.data\s+(\d+)", s)
                         @check isa(m, RegexMatch)
                         bytes = parse(Int, m[1])
                     else
@@ -155,7 +162,7 @@ if false
     io = STDOUT
     cols = displaysize(io)[2]
     state = IdIndex()
-    until = now(Dates.UTC) - Dates.Day(90) # last 30 days
+    until = now(Dates.UTC) - Dates.Day(30) # last 30 days
     get_branch_builds_until!(state, until)
     state = filter_branch(state, "master")
     fetch_jobs!(state)
