@@ -1,18 +1,19 @@
 
 using HTTP
 using JSON
-using Base.Test
+using Test
+using Dates
 
 push!(LOAD_PATH, @__DIR__)
 using Check
 
 const json_headers = Dict{String, String}([
     "Accept" => "application/vnd.travis-ci.2+json",
-    "Travis-API-Version" = "2",
+    "Travis-API-Version" => "2",
     ])
 const textplain_headers = Dict{String, String}([
     "Accept" => "text/plain",
-    "Travis-API-Version" = "2",
+    "Travis-API-Version" => "2",
     ])
 const uriroot = "https://api.travis-ci.org"
 const readtimeout = 60
@@ -23,8 +24,8 @@ do_request(path) = HTTP.get(uriroot * path, headers = json_headers, readtimeout 
 
 test_connection() = @testset "Sanity check" begin
     r = do_request("/")
-    @test r.status== 200
-    @test HTTP.headers(r)["Content-Type"] == "application/json"
+    @test r.status == 200
+    @test r["Content-Type"] == "application/json"
     @test String(r.body) == """{"hello":"world"}"""
     r
 end
@@ -174,6 +175,6 @@ if false
         sha = commit["sha"][1:10]
         msg = split(commit["message"], '\n', limit=2)[1][1:min(end, 40)]
         spark = "#" ^ (bytes > 0 ? 1 + cols ÷ 2 * (bytes - min_bytes) ÷ (max_bytes - min_bytes) : 0)
-        println("$sha $bytes bytes  $spark    \t$msg")
+        println(io, "$sha $bytes bytes  $spark    \t$msg")
     end
 end

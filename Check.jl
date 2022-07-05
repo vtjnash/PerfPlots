@@ -1,20 +1,25 @@
 module Check
+
 export @check
 
+import Test
+
+@nospecialize true
 struct FailedCheck
     result
     ex
     meta
-    FailedCheck(r::ANY, e::ANY, m::ANY) = new(r, e, m)
+    FailedCheck(r, e, m) = new(r, e, m)
 end
 
-@noinline function check_fail(result::ANY, orig_ex::ANY)
+@noinline function check_fail(result, orig_ex)
     throw(FailedCheck(result, orig_ex, nothing))
 end
 
-@noinline function check_expr_fail(result::ANY, orig_ex::Expr, values::ANY)
+@noinline function check_expr_fail(result, orig_ex::Expr, values)
     throw(FailedCheck(result, orig_ex, values))
 end
+@nospecialize false
 
 function Base.show(io::IO, check::FailedCheck)
     println(io, "FailedCheck(")
